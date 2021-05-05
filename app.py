@@ -1,104 +1,69 @@
-  
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask ,jsonify
-import json
-import os
-import re
-import concurrent.futures
-
+from re import search
+from flask import Flask ,jsonify,request
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 
+def findDawnloadUrl(link):
+    header = {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36'}
+    r = requests.get(link, headers=header)
+    soup = BeautifulSoup(r.content,features='lxml')
+    articals = soup.find_all('a',class_="typo_large typo_green typo_rounded")
+    for anc in articals:
+        return {'durl':anc['href']}
 
-def torrent(search):
-    url = "https://1337x.to/search/"+search+"/1/"
+def getNotesAndBooks(pageNo):
+    url = f'https://freebiesui.com/page/{pageNo}/'
 
-    res = requests.get(url,headers={
-                    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'})
-                
-    soup = BeautifulSoup(res.content,'lxml')
-    
-    link_list = []
+    header = {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36'}
+    r = requests.get(url, headers=header)
+    soup = BeautifulSoup(r.content,features='lxml')
+    articals = soup.find_all('article')
+    complete_json = []
+    data = []
+    page_no = []
+    for l in soup.find_all('a', class_='page-numbers' ):
+        if(l.text!=''):
+            page_no.append(l.text)
 
-    for a in soup.find_all('a', href=True, text=True):
-        link_text = str(a['href'])
-        if link_text.startswith("/torrent"):
-            link_text = "https://1337x.to"+link_text
-            link_list.append(link_text)
-    
-    file_name = []
-    magnet_url_list = []
-    total_downloads_list = []
-    last_checked_list = []
-    total_downloads_list = []
-    last_checked_list = []
-    date_uploaded_list = []
-    file_size = []
-    date_uploaded_list = []
-    seeder_list = []
-    leecher_list =[]
-    language_list =[]
-    category_list = []
-    type_list = []
-    
-    
+    for item in articals:
+        data.append(
+            {
+                'name':item.find('h4').text,
+                'categories':item.find('span', class_='categories' ).text,
+                # 'dauwnloadurl':findDawnloadUrl(item.find('a' )['href']),
+                'imgurl':item.find('img' )['src'],
+                'url':item.find('a' )['href'],
+            }
+        )
+    complete_json.append({'data':data,'pages':page_no})
+    return complete_json
 
-    def get_all_data_torrent(url_list):
-        magnet_req = requests.get(url_list,headers={
-                    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'})
-        new_soup = BeautifulSoup(magnet_req.content,'lxml')
-        
-        everything_data_list = []
 
-        div = new_soup.find('div',class_='box-info-heading').text
-        file_name.append(div)
-        for span in new_soup.find_all('span'):
-            if span.text != "":
-                everything_data_list.append(span.text)
 
-        category_list.append(everything_data_list[1])
-        type_list.append(everything_data_list[2])
-        total_downloads_list.append(everything_data_list[6])
-        last_checked_list.append(everything_data_list[7])
-        date_uploaded_list.append(everything_data_list[8])
-        file_size.append(everything_data_list[4])
-        seeder_list.append(everything_data_list[9])
-        leecher_list.append(everything_data_list[10])
-        language_list.append(everything_data_list[3])
-        
-        magnet_url = re.findall(r"\"magnet:.*?\"",str(magnet_req.content))[0].strip(" \" ")
-
-        magnet_url_list.append(magnet_url)
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(get_all_data_torrent,link_list)
-    
-    return file_name,file_size,link_list,date_uploaded_list,seeder_list,leecher_list,magnet_url_list,total_downloads_list,last_checked_list,language_list,type_list,category_list
-@app.route('/')
+@app.route('/', methods=['GET'])
 def home_page():
-    return "Welcome to 1337x unofficial API"
+    query_parameters = request.args
+    # return "Welcome to https://freebiesui.com/ unofficial API"
+    q = query_parameters.get('q',default=1)
+    print(q)
+    return jsonify(findDawnloadUrl(q))
+# http://127.0.0.1:5000/?q=https://freebiesui.com/illustrator-freebies/12-tech-free-icons-ai
 
 @app.route('/<query>')
 def home(query):
+    
 
-    file_name,file_size,link_list,date_uploaded_list,seeder_list,leecher_list,magnet_url_list,total_downloads_list,last_checked_list,language_list,category_list,type_list = torrent(query)
+    return jsonify(getNotesAndBooks(query))
+# http://127.0.0.1:5000/1
 
-    return jsonify([{'Name':file_name[index],
-    'size':file_size[index],'url':link_list[index],
-    'uploadDate': date_uploaded_list[index],
-    'seeders':seeder_list[index],
-    'leechers': leecher_list[index],
-    'magnet': magnet_url_list[index],
-    'downloads':total_downloads_list[index],
-    'lastChecked': last_checked_list[index],
-    'language': language_list[index],
-    'category': category_list[index],
-    'type': type_list[index]} 
-    for index in range(len(file_name))])
-
-
+@app.errorhandler(404)
+def page_not_found(e):
+    return "<h1>404</h1><p>The resource could not be found.</p>", 404    
 
 if __name__ == "__main__":
     app.debug = True
     app.run(port=5000)
+    
